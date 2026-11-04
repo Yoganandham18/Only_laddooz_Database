@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en-IN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Millet Laddoo Business Manager</title>
+  <meta name="description" content="Production, stock, sales, payments and expenses for a homemade millet laddoo business.">
+  <meta name="theme-color" content="#2f5d3a">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- ===== Icons ===== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-dashboard" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/></symbol>
+    <symbol id="i-cart" viewBox="0 0 24 24"><path d="M3 4h2.5l2.2 10.5h10.6L20.5 8H7"/><circle cx="9.5" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 14.5h2"/><path d="M6 6V4.5h11V6"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M16 4.8a3.3 3.3 0 0 1 0 6.4M18 14.8c2 .7 3.2 2.4 3.5 5.2"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16"/><path d="M8 16v-5M12 16V8M16 16v-3M20 16V6"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 17l-5-5 5-5M5 12h11"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/></symbol>
+  </defs>
+</svg>
+
+<div id="loading-bar" class="loading-bar" hidden><span></span></div>
+<div id="demo-banner" class="demo-banner" hidden></div>
+
+<!-- ===== App shell ===== -->
+<div id="app" class="app" hidden>
+  <aside id="sidebar" class="sidebar" aria-label="Main navigation">
+    <div class="sidebar-brand">
+      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div>
+        <div class="brand-name">MILLET LADDOO</div>
+        <div class="brand-sub">BUSINESS MANAGER</div>
+      </div>
+      <button type="button" class="icon-btn only-mobile sidebar-close" id="sidebar-close" aria-label="Close menu"><svg><use href="#i-x"/></svg></button>
+    </div>
+    <nav>
+      <ul class="nav-list">
+        <li><a href="#dashboard" data-route="dashboard"><svg><use href="#i-dashboard"/></svg>Dashboard</a></li>
+        <li><a href="#record-sale" data-route="record-sale"><svg><use href="#i-cart"/></svg>Record Sale</a></li>
+        <li><a href="#sales" data-route="sales"><svg><use href="#i-list"/></svg>Sales History</a></li>
+        <li><a href="#expenses" data-route="expenses"><svg><use href="#i-wallet"/></svg>Expenses</a></li>
+        <li><a href="#customers" data-route="customers"><svg><use href="#i-users"/></svg>Customers</a></li>
+        <li><a href="#reports" data-route="reports"><svg><use href="#i-chart"/></svg>Reports</a></li>
+        <li><a href="#backup" data-route="backup"><svg><use href="#i-gear"/></svg>Backup</a></li>
+      </ul>
+    </nav>
+    <div class="sidebar-foot">
+      <div id="sidebar-business" class="sidebar-business"></div>
+    </div>
+  </aside>
+  <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
+
+  <div class="main">
+    <header class="topbar">
+      <button type="button" class="icon-btn only-mobile" id="menu-btn" aria-label="Open menu"><svg><use href="#i-menu"/></svg></button>
+      <div class="topbar-title">
+        <h1 id="page-title">Dashboard</h1>
+        <p id="today-label" class="muted"></p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" id="refresh-btn" title="Reload data from Google Sheets"><svg><use href="#i-refresh"/></svg><span class="hide-sm">Refresh</span></button>
+    </header>
+
+    <main id="content" class="content">
+
+      <!-- ============ DASHBOARD ============ -->
+      <section id="page-dashboard" class="page" data-title="Dashboard" hidden>
+        <form id="dash-filters" class="filter-bar" novalidate>
+          <div class="chips" role="group" aria-label="Quick date ranges">
+            <button type="button" class="chip" data-preset="today">Today</button>
+            <button type="button" class="chip" data-preset="7d">Last 7 days</button>
+            <button type="button" class="chip" data-preset="month">This month</button>
+            <button type="button" class="chip" data-preset="30d">Last 30 days</button>
+            <button type="button" class="chip" data-preset="year">This year</button>
+          </div>
+          <div class="field-inline"><label for="dash-from">From</label><input type="date" id="dash-from" name="from"></div>
+          <div class="field-inline"><label for="dash-to">To</label><input type="date" id="dash-to" name="to"></div>
+          <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+        </form>
+
+        <div id="dash-metrics" class="metric-grid"></div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><h2>Daily sales</h2><span class="muted small" id="dash-daily-caption"></span></div>
+            <div class="chart-box"><canvas id="chart-daily" aria-label="Daily sales revenue chart" role="img"></canvas></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Monthly sales</h2><span class="muted small">last 12 months</span></div>
+            <div class="chart-box"><canvas id="chart-monthly" aria-label="Monthly sales revenue chart" role="img"></canvas></div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><h2>Sales by product</h2></div>
+            <div class="chart-box"><canvas id="chart-products" aria-label="Sales by product chart" role="img"></canvas></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Money still to collect</h2><a href="#sales" class="small">Sales History</a></div>
+            <div id="dash-due"></div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><h2>Recent sales</h2><a href="#sales" class="small">All sales</a></div>
+            <div id="dash-recent-sales"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Recent expenses</h2><a href="#expenses" class="small">All expenses</a></div>
+            <div id="dash-recent-expenses"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ RECORD SALE ============ -->
+      <section id="page-record-sale" class="page" data-title="Record Sale" hidden>
+        <div id="sale-edit-banner" class="notice notice-warn" hidden></div>
+        <form id="form-sale" class="sale-layout" novalidate>
+          <input type="hidden" id="sale-id" name="saleId">
+          <div class="panel">
+            <div class="form-grid">
+              <div class="field"><label for="sale-date">Sale date</label><input type="date" id="sale-date" name="date" required></div>
+              <div class="field">
+                <label for="sale-customer">Customer</label>
+                <input id="sale-customer" name="customerName" list="customer-list" maxlength="80" placeholder="Walk-in (leave empty)" autocomplete="off">
+                <datalist id="customer-list"></datalist>
+              </div>
+            </div>
+            <h2 class="section-title">Items</h2>
+            <div id="sale-lines" class="sale-lines"></div>
+            <button type="button" class="btn btn-ghost" id="sale-add-line"><svg><use href="#i-plus"/></svg>Add another product</button>
+            <div class="field"><label for="sale-notes">Notes <span class="optional">optional</span></label><textarea id="sale-notes" name="notes" rows="2" maxlength="500"></textarea></div>
+          </div>
+
+          <aside class="panel sale-summary">
+            <h2>Bill</h2>
+            <dl class="totals">
+              <div><dt>Subtotal</dt><dd id="sum-subtotal">₹0.00</dd></div>
+              <div class="field-row">
+                <dt><label for="sale-discount">Discount (₹)</label></dt>
+                <dd><input type="number" id="sale-discount" name="discount" min="0" step="0.01" inputmode="decimal" value="0"></dd>
+              </div>
+              <div class="grand"><dt>Grand total</dt><dd id="sum-total">₹0.00</dd></div>
+            </dl>
+            <div id="sale-payment-new">
+              <div class="field"><label for="sale-received">Amount received now (₹)</label><input type="number" id="sale-received" name="amountReceived" min="0" step="0.01" inputmode="decimal" value="0"></div>
+              <div class="quick-row">
+                <button type="button" class="chip" id="sale-paid-full">Paid in full</button>
+                <button type="button" class="chip" id="sale-paid-none">Not paid yet</button>
+              </div>
+              <div class="form-grid tight">
+                <div class="field"><label for="sale-method">Payment method</label><select id="sale-method" name="paymentMethod"></select></div>
+                <div class="field"><label for="sale-ref">Reference <span class="optional">UPI / txn</span></label><input type="text" id="sale-ref" name="paymentReference" maxlength="60"></div>
+              </div>
+            </div>
+            <div id="sale-payment-edit" hidden>
+              <p class="small muted">Payments are managed separately. Received so far: <b id="sale-edit-received">₹0.00</b></p>
+            </div>
+            <dl class="totals">
+              <div><dt>Balance due</dt><dd id="sum-balance">₹0.00</dd></div>
+              <div><dt>Payment status</dt><dd><span id="sum-status" class="pill">Pending</span></dd></div>
+            </dl>
+            <p id="sale-error" class="form-error" role="alert" hidden></p>
+            <div class="form-actions column">
+              <button type="submit" class="btn btn-primary btn-block" id="sale-submit">Save sale</button>
+              <button type="button" class="btn btn-ghost btn-block" id="sale-reset">Clear form</button>
+            </div>
+          </aside>
+        </form>
+      </section>
+
+      <!-- ============ SALES HISTORY ============ -->
+      <section id="page-sales" class="page" data-title="Sales History" hidden>
+        <form id="sales-filters" class="filter-bar" novalidate>
+          <input type="search" id="sh-q" name="q" placeholder="Customer or bill no." aria-label="Search by customer or bill number">
+          <div class="field-inline"><label for="sh-from">From</label><input type="date" id="sh-from" name="from"></div>
+          <div class="field-inline"><label for="sh-to">To</label><input type="date" id="sh-to" name="to"></div>
+          <select id="sh-product" name="productId" aria-label="Product"><option value="">All products</option></select>
+          <select id="sh-status" name="paymentStatus" aria-label="Payment status">
+            <option value="">Any payment status</option><option>Paid</option><option>Partially Paid</option><option>Pending</option>
+          </select>
+          <select id="sh-salestatus" name="saleStatus" aria-label="Sale status">
+            <option value="ACTIVE">Active sales</option><option value="CANCELLED">Cancelled</option><option value="ALL">All sales</option>
+          </select>
+          <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="sh-export"><svg><use href="#i-download"/></svg>CSV</button>
+        </form>
+        <div id="sales-totals" class="summary-strip"></div>
+        <div id="sales-table"></div>
+        <div id="sales-pager" class="pager"></div>
+      </section>
+
+      <!-- ============ EXPENSES ============ -->
+      <section id="page-expenses" class="page" data-title="Expenses" hidden>
+        <form id="expense-filters" class="filter-bar" novalidate>
+          <input type="search" id="ex-q" name="q" placeholder="Search description" aria-label="Search expenses">
+          <div class="field-inline"><label for="ex-from">From</label><input type="date" id="ex-from" name="from"></div>
+          <div class="field-inline"><label for="ex-to">To</label><input type="date" id="ex-to" name="to"></div>
+          <select id="ex-category" name="category" aria-label="Category"><option value="">All categories</option></select>
+          <label class="check small"><input type="checkbox" id="ex-void" name="includeVoid"> Show voided</label>
+          <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-ghost btn-sm" id="ex-export"><svg><use href="#i-download"/></svg>CSV</button>
+          <button type="button" class="btn btn-primary" id="btn-add-expense"><svg><use href="#i-plus"/></svg>Add expense</button>
+        </form>
+        <div id="expense-summary" class="summary-strip"></div>
+        <div class="grid-2 wide-left">
+          <div class="panel"><div id="expenses-table"></div><div id="expenses-pager" class="pager"></div></div>
+          <div class="panel">
+            <h2>By category</h2>
+            <div id="expense-bycat"></div>
+            <h2 class="section-title">By month</h2>
+            <div id="expense-bymonth"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ CUSTOMERS ============ -->
+      <section id="page-customers" class="page" data-title="Customers" hidden>
+        <p class="muted small">Customers are taken from the name typed on each bill. To add a customer, just type a new name when you record a sale.</p>
+        <div class="toolbar">
+          <input type="search" id="cus-search" placeholder="Search customer name" aria-label="Search customers">
+          <select id="cus-filter" aria-label="Filter customers">
+            <option value="all">All customers</option><option value="due">With balance due</option>
+          </select>
+        </div>
+        <div id="customers-summary" class="summary-strip"></div>
+        <div id="customers-table"></div>
+        <div id="customers-pager" class="pager"></div>
+      </section>
+
+      <!-- ============ REPORTS ============ -->
+      <section id="page-reports" class="page" data-title="Reports" hidden>
+        <form id="report-filters" class="filter-bar" novalidate>
+          <div class="chips" role="group" aria-label="Quick date ranges">
+            <button type="button" class="chip" data-preset="month">This month</button>
+            <button type="button" class="chip" data-preset="lastmonth">Last month</button>
+            <button type="button" class="chip" data-preset="30d">Last 30 days</button>
+            <button type="button" class="chip" data-preset="year">This year</button>
+          </div>
+          <div class="field-inline"><label for="rep-from">From</label><input type="date" id="rep-from" name="from"></div>
+          <div class="field-inline"><label for="rep-to">To</label><input type="date" id="rep-to" name="to"></div>
+          <button type="submit" class="btn btn-secondary btn-sm">Run report</button>
+        </form>
+        <div class="tabs" role="tablist" data-tabs="reports">
+          <button type="button" role="tab" class="tab" data-tab="sales" aria-selected="true">Sales</button>
+          <button type="button" role="tab" class="tab" data-tab="expenses" aria-selected="false">Expenses</button>
+          <button type="button" role="tab" class="tab" data-tab="payments" aria-selected="false">Payments</button>
+          <button type="button" role="tab" class="tab" data-tab="profit" aria-selected="false">Profit</button>
+        </div>
+        <div class="tab-panel" data-panel="sales"><div id="rep-sales"></div></div>
+        <div class="tab-panel" data-panel="expenses" hidden><div id="rep-expenses"></div></div>
+        <div class="tab-panel" data-panel="payments" hidden><div id="rep-payments"></div></div>
+        <div class="tab-panel" data-panel="profit" hidden><div id="rep-profit"></div></div>
+      </section>
+
+      <!-- ============ BACKUP ============ -->
+      <section id="page-backup" class="page" data-title="Backup" hidden>
+        <div class="grid-2">
+          <div class="stack">
+            <div class="panel">
+              <h2>Download your data</h2>
+              <p class="muted small">Each button downloads one tab of the Google Sheet as a CSV file that opens in Excel. For a full backup, also use <b>File → Make a copy</b> on the Google Sheet every week.</p>
+              <div class="button-grid" id="export-buttons">
+                <button type="button" class="btn btn-secondary" data-export="Sales">Sales</button>
+                <button type="button" class="btn btn-secondary" data-export="Payments">Payments</button>
+                <button type="button" class="btn btn-secondary" data-export="Expenses">Expenses</button>
+              </div>
+            </div>
+            <div class="panel">
+              <h2>Check the connection and data</h2>
+              <div class="toolbar toolbar-tight">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-test-conn">Test connection</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-health">Check data</button>
+              </div>
+              <div id="health-output" class="small"></div>
+            </div>
+          </div>
+          <div class="panel">
+            <h2>Business settings</h2>
+            <p class="muted small">Business name, products and prices are set at the top of <code>Code.gs</code> (the <code>CONFIG</code> block). Change them there and deploy a new version.</p>
+            <dl class="kv" id="info-list"></dl>
+            <p class="notice notice-warn" style="margin-top:14px">There is no login. Anyone who has this website's address can see and change the data. Do not share the link.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <nav class="bottom-nav" aria-label="Quick navigation">
+    <a href="#dashboard" data-route="dashboard"><svg><use href="#i-dashboard"/></svg><span>Home</span></a>
+    <a href="#record-sale" data-route="record-sale"><svg><use href="#i-cart"/></svg><span>Sell</span></a>
+    <a href="#sales" data-route="sales"><svg><use href="#i-list"/></svg><span>Sales</span></a>
+    <a href="#expenses" data-route="expenses"><svg><use href="#i-wallet"/></svg><span>Expenses</span></a>
+    <button type="button" id="bottom-more"><svg><use href="#i-more"/></svg><span>More</span></button>
+  </nav>
+</div>
+
+<!-- ===== Dialogs ===== -->
+<dialog id="dlg-view" class="dialog dialog-wide" aria-labelledby="dlg-view-title">
+  <div class="dialog-shell">
+    <header class="dialog-head"><h2 id="dlg-view-title">Details</h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button></header>
+    <div class="dialog-body" id="dlg-view-body"></div>
+    <footer class="dialog-foot" id="dlg-view-foot"></footer>
+  </div>
+</dialog>
+
+<dialog id="dlg-payment" class="dialog" aria-labelledby="dlg-payment-title">
+  <form id="form-payment" method="dialog" novalidate>
+    <header class="dialog-head"><h2 id="dlg-payment-title">Record payment</h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button></header>
+    <div class="dialog-body">
+      <input type="hidden" name="saleId">
+      <div id="pay-info" class="info-box"></div>
+      <div class="form-grid">
+        <div class="field"><label for="pay-type">Type</label><select id="pay-type" name="type"><option value="PAYMENT">Payment received</option><option value="REFUND">Refund given back</option></select></div>
+        <div class="field"><label for="pay-date">Date</label><input type="date" id="pay-date" name="date" required></div>
+        <div class="field"><label for="pay-amount">Amount (₹)</label><input type="number" id="pay-amount" name="amount" min="0" step="0.01" inputmode="decimal" required></div>
+        <div class="field"><label for="pay-method">Method</label><select id="pay-method" name="method"></select></div>
+        <div class="field"><label for="pay-ref">Reference <span class="optional">optional</span></label><input id="pay-ref" name="reference" maxlength="60"></div>
+        <div class="field span-2"><label for="pay-notes">Notes <span class="optional">optional</span></label><input id="pay-notes" name="notes" maxlength="300"></div>
+      </div>
+      <p class="form-error" role="alert" hidden></p>
+    </div>
+    <footer class="dialog-foot"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button type="submit" class="btn btn-primary">Save payment</button></footer>
+  </form>
+</dialog>
+
+<dialog id="dlg-cancel" class="dialog" aria-labelledby="dlg-cancel-title">
+  <form id="form-cancel" method="dialog" novalidate>
+    <header class="dialog-head"><h2 id="dlg-cancel-title">Cancel sale</h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button></header>
+    <div class="dialog-body">
+      <input type="hidden" name="saleId">
+      <input type="hidden" name="confirmReceived">
+      <p>Cancelling returns all items of <b id="cancel-sale-id"></b> to stock and removes the sale from revenue. The sale stays in history marked <b>Cancelled</b>.</p>
+      <div class="field"><label for="cancel-reason">Reason</label><input id="cancel-reason" name="reason" maxlength="300" required placeholder="e.g. Order cancelled by customer"></div>
+      <div id="cancel-received-box" class="info-box" hidden>
+        <p><b id="cancel-received"></b> was received for this sale. What happened to that money?</p>
+        <label class="check"><input type="radio" name="receivedHandling" value="REFUND" checked> We gave it back to the customer (record a refund today)</label>
+        <div class="field" id="cancel-refund-method-box"><label for="cancel-refund-method">Refund method</label><select id="cancel-refund-method" name="refundMethod"></select></div>
+        <label class="check"><input type="radio" name="receivedHandling" value="VOID_PAYMENTS"> The payment was entered by mistake (void the payments)</label>
+      </div>
+      <p class="form-error" role="alert" hidden></p>
+    </div>
+    <footer class="dialog-foot"><button type="button" class="btn btn-ghost" data-close>Keep sale</button><button type="submit" class="btn btn-danger">Cancel sale</button></footer>
+  </form>
+</dialog>
+
+<dialog id="dlg-expense" class="dialog" aria-labelledby="dlg-expense-title">
+  <form id="form-expense" method="dialog" novalidate>
+    <header class="dialog-head"><h2 id="dlg-expense-title">Add expense</h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button></header>
+    <div class="dialog-body">
+      <input type="hidden" name="expenseId">
+      <div class="form-grid">
+        <div class="field"><label for="e-date">Date</label><input type="date" id="e-date" name="date" required></div>
+        <div class="field"><label for="e-cat">Category</label><select id="e-cat" name="category" required></select></div>
+        <div class="field span-2"><label for="e-desc">Description</label><input id="e-desc" name="description" maxlength="200" required placeholder="e.g. Jaggery 5 kg from market"></div>
+        <div class="field"><label for="e-amount">Amount (₹)</label><input type="number" id="e-amount" name="amount" min="0" step="0.01" inputmode="decimal" required></div>
+        <div class="field"><label for="e-method">Paid by</label><select id="e-method" name="paymentMethod"></select></div>
+                <div class="field span-2"><label for="e-notes">Notes <span class="optional">optional</span></label><input id="e-notes" name="notes" maxlength="300"></div>
+      </div>
+      <p class="form-error" role="alert" hidden></p>
+    </div>
+    <footer class="dialog-foot"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button type="submit" class="btn btn-primary">Save expense</button></footer>
+  </form>
+</dialog>
+
+<dialog id="dlg-reason" class="dialog" aria-labelledby="dlg-reason-title">
+  <form id="form-reason" method="dialog" novalidate>
+    <header class="dialog-head"><h2 id="dlg-reason-title">Are you sure?</h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg><use href="#i-x"/></svg></button></header>
+    <div class="dialog-body">
+      <p id="reason-message"></p>
+      <div class="field" id="reason-field"><label for="reason-input">Reason</label><input id="reason-input" name="reason" maxlength="300"></div>
+      <p class="form-error" role="alert" hidden></p>
+    </div>
+    <footer class="dialog-foot"><button type="button" class="btn btn-ghost" data-close>Go back</button><button type="submit" class="btn btn-danger" id="reason-ok">Confirm</button></footer>
+  </form>
+</dialog>
+
+<div id="toast-root" class="toast-root" aria-live="polite" aria-atomic="false"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="config.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
