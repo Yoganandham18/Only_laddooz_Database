@@ -416,3 +416,9 @@ th.sortable[aria-sort="descending"]::after { content: " ↓"; opacity: 1; }
   .bottom-nav svg { width: 22px; height: 22px; }
   .toast-root { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); }
 }
+
+/* "+ Add new…" box under a drop-down */
+.add-new { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.add-new input { flex: 1; min-width: 0; }
+.add-new .btn { flex: 0 0 auto; }
+.sale-line .add-new { grid-column: 1 / -1; margin-top: 0; max-width: 520px; }

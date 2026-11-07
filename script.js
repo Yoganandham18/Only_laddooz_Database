@@ -311,13 +311,80 @@
   });
   const DEFAULT_SETTINGS = { businessName: '', paymentMethods: ['Cash', 'UPI', 'Bank transfer', 'Other'], defaultPaymentMethod: 'Cash',
     expenseCategories: ['Millet', 'Ragi', 'Jaggery', 'Nuts', 'Oil or ghee', 'Raw materials', 'Packaging materials', 'Aluminium foil', 'Boxes and labels', 'Transportation', 'Electricity', 'Other expenses'] };
-  const State = { settings: DEFAULT_SETTINGS, products: CONFIG_PRODUCTS, customers: [], loaded: false };
+  /** Items / categories added on the spot ("+ Add new…"). Kept in this browser, and the server also
+   *  sends back every name already used in the sheet, so they show on other phones once used in a bill or expense. */
+  const ADD_NEW = '__add_new__';
+  const newProduct = (name) => ({ productId: name, productName: name, sellingPrice: 0, boxSize: 8, boxPrice: 0, active: true });
+  const Extras = {
+    KEY: 'laddoo_extras',
+    get() { try { const x = JSON.parse(localStorage.getItem(Extras.KEY) || '{}'); return { products: x.products || [], categories: x.categories || [] }; } catch (e) { return { products: [], categories: [] }; } },
+    add(kind, name) { const x = Extras.get(); if (!x[kind].includes(name)) x[kind].push(name); try { localStorage.setItem(Extras.KEY, JSON.stringify(x)); } catch (e) { /* private window: kept until reload */ } }
+  };
+  const hasName = (list, name) => list.some((n) => n.toLowerCase() === name.toLowerCase());
+  function mergeProducts(names) {
+    names.forEach((n) => { n = String(n || '').trim(); if (n && !hasName(State.products.map((p) => p.productName), n)) State.products.push(newProduct(n)); });
+  }
+  function mergeCategories(names) {
+    names.forEach((n) => { n = String(n || '').trim(); if (n && !hasName(State.settings.expenseCategories, n)) State.settings.expenseCategories.push(n); });
+  }
+  const State = { settings: { ...DEFAULT_SETTINGS, expenseCategories: DEFAULT_SETTINGS.expenseCategories.slice() }, products: CONFIG_PRODUCTS.slice(), customers: [], loaded: false };
+  mergeProducts(Extras.get().products); mergeCategories(Extras.get().categories);
   const productById = (id) => State.products.find((p) => p.productId === id);
   const customerById = (id) => State.customers.find((c) => c.customerId === id);
+
+  /** "+ Add new…" at the bottom of a drop-down: shows a small box to type the name right there. */
+  const AddNew = {
+    // remember what was selected before the user picked "+ Add new…", so Cancel can put it back
+    track() { document.addEventListener('focusin', (e) => { if (e.target.tagName === 'SELECT' && e.target.value !== ADD_NEW) e.target.dataset.prev = e.target.value; }); },
+    start(sel, kind) {
+      const prev = sel.dataset.prev && [...sel.options].some((o) => o.value === sel.dataset.prev) ? sel.dataset.prev : (kind === 'products' ? '' : sel.options[0].value);
+      sel.value = prev;
+      const field = sel.closest('.sale-line') || sel.closest('.field');   // on a bill line the box takes a full row below
+      let box = $('.add-new', field);
+      if (!box) {
+        box = document.createElement('div');
+        box.className = 'add-new';
+        box.innerHTML = `<input type="text" maxlength="60" aria-label="${kind === 'products' ? 'New item name' : 'New category name'}" placeholder="${kind === 'products' ? 'New item name' : 'New category name'}">
+          <button type="button" class="btn btn-primary btn-sm" data-add>Add</button>
+          <button type="button" class="icon-btn" data-cancel aria-label="Cancel" title="Cancel"><svg><use href="#i-x"/></svg></button>`;
+        field.appendChild(box);
+        const input = $('input', box);
+        const close = () => { box.remove(); sel.focus(); };
+        const add = () => {
+          const name = input.value.trim().replace(/\s+/g, ' ');
+          if (!name) { input.focus(); input.setAttribute('aria-invalid', 'true'); return; }
+          const existing = kind === 'products' ? (State.products.find((p) => p.productName.toLowerCase() === name.toLowerCase()) || {}).productId
+            : State.settings.expenseCategories.find((c) => c.toLowerCase() === name.toLowerCase());
+          let value = existing;
+          if (!existing) {
+            Extras.add(kind, name);
+            if (kind === 'products') { mergeProducts([name]); Selects.products(); }
+            else { mergeCategories([name]); Selects.keep($('#ex-category'), Selects.options(State.settings.expenseCategories, { blank: 'All categories' }));
+              Selects.keep(sel, Selects.options(State.settings.expenseCategories, { addNew: '+ Add new category…' })); }
+            value = name;
+          }
+          sel.value = value; sel.dataset.prev = value;
+          box.remove();
+          sel.dispatchEvent(new Event('change', { bubbles: true }));   // fills unit / quantity for a new item
+          UI.toast(existing ? `"${value}" is already in the list – selected it.` : `Added "${value}".`);
+        };
+        $('[data-add]', box).addEventListener('click', add);
+        $('[data-cancel]', box).addEventListener('click', close);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); add(); }
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+        });
+        input.addEventListener('input', () => input.removeAttribute('aria-invalid'));
+      }
+      $('input', box).focus();
+    }
+  };
 
   async function loadCore() {
     const res = await Api.call('getBootstrap');
     State.settings = res.data.settings;
+    mergeCategories(DEFAULT_SETTINGS.expenseCategories.concat(Extras.get().categories));
+    mergeProducts((res.data.usedProducts || []).concat(Extras.get().products));
     State.customers = res.data.customers;
     State.loaded = true;
     Selects.fillAll();
@@ -326,21 +393,27 @@
   }
 
   const Selects = {
-    options(list, { value = (x) => x, label = (x) => x, blank } = {}) {
+    options(list, { value = (x) => x, label = (x) => x, blank, addNew } = {}) {
       return (blank !== undefined ? `<option value="">${esc(blank)}</option>` : '') +
-        list.map((x) => `<option value="${esc(value(x))}">${esc(label(x))}</option>`).join('');
+        list.map((x) => `<option value="${esc(value(x))}">${esc(label(x))}</option>`).join('') +
+        (addNew ? `<option value="${ADD_NEW}">${esc(addNew)}</option>` : '');
     },
     keep(sel, html) { const v = sel.value; sel.innerHTML = html; if ([...sel.options].some((o) => o.value === v)) sel.value = v; },
     fillAll() {
       const s = State.settings;
       Selects.keep($('#sh-product'), Selects.options(State.products, { value: (p) => p.productId, label: (p) => p.productName, blank: 'All products' }));
       Selects.keep($('#ex-category'), Selects.options(s.expenseCategories, { blank: 'All categories' }));
-      Selects.keep($('#e-cat'), Selects.options(s.expenseCategories));
+      Selects.keep($('#e-cat'), Selects.options(s.expenseCategories, { addNew: '+ Add new category…' }));
       const methods = Selects.options(s.paymentMethods);
       ['#sale-method', '#pay-method', '#e-method', '#cancel-refund-method'].forEach((id) => {
         const el = $(id); const had = el.value; el.innerHTML = methods; el.value = had || s.defaultPaymentMethod;
       });
       Selects.customers();
+    },
+    /** Refresh every product drop-down (filters + each bill line), keeping what is selected. */
+    products() {
+      Selects.keep($('#sh-product'), Selects.options(State.products, { value: (p) => p.productId, label: (p) => p.productName, blank: 'All products' }));
+      $$('.sale-line', $('#sale-lines')).forEach((row) => RecordSale.fillProductSelect(row));
     },
     customers() {
       $('#customer-list').innerHTML = State.customers.map((c) => `<option value="${esc(c.customerName)}"></option>`).join('');
@@ -651,7 +724,7 @@
       const sel = $('.l-product', row);
       const list = State.products.slice();
       if (keepId && !productById(keepId)) list.push({ productId: keepId, productName: keepId + ' (old)', sellingPrice: 0, boxSize: '' });
-      Selects.keep(sel, Selects.options(list, { value: (p) => p.productId, label: (p) => p.productName, blank: 'Choose product' }));
+      Selects.keep(sel, Selects.options(list, { value: (p) => p.productId, label: (p) => p.productName, blank: 'Choose product', addNew: '+ Add new item…' }));
     },
     addLine(prefill) {
       const row = document.createElement('div');
@@ -692,6 +765,7 @@
     },
     onLineChange(e) {
       const row = e.target.closest('.sale-line'); if (!row) return;
+      if (e.target.classList.contains('l-product') && e.target.value === ADD_NEW) { AddNew.start(e.target, 'products'); return; }
       if (e.target.classList.contains('l-product')) {
         RecordSale.syncUnits(row); RecordSale.defaultPrice(row);
         if (!$('.l-qty', row).value) $('.l-qty', row).value = '1';
@@ -1045,6 +1119,7 @@
       $('#ex-from').value = r.from; $('#ex-to').value = r.to;
       $('#expense-filters').addEventListener('submit', (e) => { e.preventDefault(); Expenses.page = 1; Expenses.load(); });
       $('#btn-add-expense').addEventListener('click', () => Expenses.openForm(null));
+      $('#e-cat').addEventListener('change', (e) => { if (e.target.value === ADD_NEW) AddNew.start(e.target, 'categories'); });
       $('#ex-export').addEventListener('click', () => Csv.download(Csv.name('expenses', Expenses.range),
         ['Date', 'Expense ID', 'Category', 'Description', 'Amount', 'Paid by', 'Status', 'Notes'],
         Expenses.rows.map((x) => [Fmt.date(x.date), x.expenseId, x.category, x.description, x.amount, x.paymentMethod, x.status, x.notes])));
@@ -1092,6 +1167,9 @@
     openForm(x) {
       const form = $('#form-expense');
       form.reset(); UI.clearInvalid(form); freshRequest(form);
+      $$('.add-new', form).forEach((b) => b.remove());
+      if (x && x.category) mergeCategories([x.category]);
+      Selects.keep($('#e-cat'), Selects.options(State.settings.expenseCategories, { addNew: '+ Add new category…' }));
       $('#dlg-expense-title').textContent = x ? 'Edit expense' : 'Add expense';
       $('#e-date').max = Dates.today();
       if (x) setForm(form, x);
@@ -1262,6 +1340,7 @@
     Router.register('reports', Reports);
     Router.register('backup', Backup);
     Shell.init();
+    AddNew.track();
     Payments.init();
     Cancel.init();
     document.addEventListener('click', (e) => {
