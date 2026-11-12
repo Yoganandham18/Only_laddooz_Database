@@ -1,6 +1,6 @@
 /* =============================================================================
  * Millet Laddoo Business Manager — frontend logic (script.js)
- * Simple version 3.0 (no login, no stock tracking). Plain ES2020, no framework. Sections:
+ * Version 3.3 (no login, no stock tracking). Plain ES2020, no framework. Sections:
  *   1. Utilities & formatting       5. Router & app shell
  *   2. Storage                      6. Shared widgets (tables, pager, tabs, CSV)
  *   3. API client                   7. Page controllers
@@ -13,6 +13,8 @@
 
   const CFG = window.LADDOO_CONFIG || {};
   const DEMO = !!window.LADDOO_DEMO_TRANSPORT;
+  const DEMO_DIRECT = DEMO && !window.LADDOO_DEMO_LOCAL;   // preview: ask the in-page "server" directly unless testing the local copy
+  const SCRIPT_SRC = (document.currentScript && document.currentScript.src) || '';
 
   /* ===================== 1. Utilities & formatting ===================== */
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -30,6 +32,8 @@
   const Fmt = {
     inr: (n) => moneyFmt.format(Number(n) || 0),
     inrShort: (n) => moneyShort.format(Number(n) || 0),
+    /** Chart axis: ₹950, ₹12k, ₹1.2L */
+    axis: (n) => { n = Number(n) || 0; const a = Math.abs(n); return a >= 1e5 ? '₹' + +(n / 1e5).toFixed(1) + 'L' : a >= 1e3 ? '₹' + +(n / 1e3).toFixed(1) + 'k' : '₹' + Math.round(n); },
     qty: (n) => qtyFmt.format(Number(n) || 0),
     date(ymd) {
       if (!ymd) return '';
@@ -87,12 +91,6 @@
     }
   };
 
-  /* ===================== 2. Storage & session ===================== */
-  const Store = {
-    get(area, key) { try { return window[area].getItem(key); } catch (e) { return null; } },
-    set(area, key, val) { try { window[area].setItem(key, val); } catch (e) { /* storage unavailable */ } },
-    del(area, key) { try { window[area].removeItem(key); } catch (e) { /* ignore */ } }
-  };
   /* ===================== 3. API client =====================
    * Transport: POST with a URL-encoded body  payload=<JSON>  and no custom
    * headers → a CORS "simple request" that Apps Script can answer. The
@@ -108,9 +106,93 @@
     stop() { this.count = Math.max(0, this.count - 1); if (!this.count) $('#loading-bar').hidden = true; }
   };
 
+  /* ---------------------------------------------------------
+   * Local copy: all rows are downloaded once (and kept in this browser), and engine.js —
+   * the same Code.gs — works out every page from that copy instantly. Only saving goes to
+   * Google; the reply carries the updated rows. If engine.js is missing or a different
+   * version from Code.gs, everything is simply asked from Google as before.
+   * --------------------------------------------------------- */
+  const Local = {
+    engine: null, snap: null, at: 0, inflight: null, available: false, onUpdate: null,
+    KEY: 'laddoo_snapshot_' + String(CFG.API_URL || '').slice(-24),
+    async init() {
+      try {
+        if (!window.LaddooEngine && SCRIPT_SRC) await Local.loadScript(new URL('engine.js?v=' + encodeURIComponent(CFG.CLIENT_VERSION || ''), SCRIPT_SRC).href);
+        if (!window.LaddooEngine) return;
+        Local.engine = window.LaddooEngine.create();
+        Local.available = true;
+        let saved = null;
+        try { saved = JSON.parse(localStorage.getItem(Local.KEY) || 'null'); } catch (e) { saved = null; }
+        if (saved && saved.version === Local.engine.version) Local.use(saved, false);   // open instantly with what we had last time
+      } catch (e) { Local.available = false; }
+    },
+    loadScript(src) {
+      return new Promise((resolve) => {
+        const el = document.createElement('script');
+        el.src = src; el.onload = resolve; el.onerror = resolve;   // missing file → just use the slower way
+        document.head.appendChild(el);
+        setTimeout(resolve, 8000);
+      });
+    },
+    use(snap, store = true) {
+      if (!snap || !snap.tables) return false;
+      if (snap.version !== Local.engine.version) {
+        Local.available = false;
+        UI.toast('engine.js and Code.gs are different versions, so the site is using the slower way. Upload the matching engine.js.', 'warn', 9000);
+        return false;
+      }
+      const same = Local.snap && JSON.stringify(Local.snap.tables) === JSON.stringify(snap.tables);
+      Local.engine.load(snap); Local.snap = snap; Local.at = Date.now();
+      if (store) { try { localStorage.setItem(Local.KEY, JSON.stringify(snap)); } catch (e) { /* storage full or blocked: fine */ } }
+      return !same;
+    },
+    /** Download the latest rows from Google. Returns true when something changed. */
+    refresh() {
+      if (Local.inflight) return Local.inflight;
+      Local.inflight = Api.send('getSnapshot').then((res) => Local.use(res.data)).finally(() => { Local.inflight = null; });
+      return Local.inflight;
+    },
+    /** Quiet refresh in the background; redraws the page only if the data changed. */
+    syncInBackground() {
+      if (!Local.available) return;
+      Local.refresh().then((changed) => { if (changed && Local.onUpdate) Local.onUpdate(); }).catch(() => {});
+    },
+    async call(action, payload) {
+      if (!Local.snap) await Local.refresh();
+      if (!Local.available) return null;
+      const res = Local.engine.call(action, payload);
+      if (!res.success) throw new ApiError(res.code || 'SERVER_ERROR', res.message || 'The request failed.');
+      return res;
+    }
+  };
+
   const Api = {
-    configured() { return DEMO || (typeof CFG.API_URL === 'string' && /^https:\/\/script\.google(usercontent)?\.com\//.test(CFG.API_URL)); },
+    // Without engine.js: read results are kept for 2 minutes, and thrown away when anything is saved or Refresh is pressed.
+    cache: new Map(), CACHE_MS: 120000, NO_CACHE: ['ping', 'checkData', 'exportData'],
+    clearCache() { Api.cache.clear(); },
     async call(action, payload = {}, opts = {}) {
+      const isWrite = !!opts.requestId;
+      if (!isWrite && action !== 'ping' && Local.available && !DEMO_DIRECT) {
+        const res = await Local.call(action, payload);
+        if (res) return res;
+      }
+      if (isWrite) Api.clearCache();
+      const key = action + ' ' + JSON.stringify(payload);
+      const useCache = !isWrite && !opts.fresh && !Api.NO_CACHE.includes(action);
+      const hit = useCache && Api.cache.get(key);
+      if (hit && Date.now() - hit.t < Api.CACHE_MS) return hit.res;
+      const res = await Api.send(action, payload, opts);
+      if (isWrite) {
+        Api.clearCache(); Core.stale = true;
+        const snap = res.data && res.data._snapshot;
+        if (snap) { delete res.data._snapshot; if (Local.available) Local.use(snap); }
+        else if (Local.available) await Local.refresh().catch(() => {});   // e.g. "already saved" replies carry no rows
+      }
+      else if (!Api.NO_CACHE.includes(action)) Api.cache.set(key, { t: Date.now(), res });
+      return res;
+    },
+    configured() { return DEMO || (typeof CFG.API_URL === 'string' && /^https:\/\/script\.google(usercontent)?\.com\//.test(CFG.API_URL)); },
+    async send(action, payload = {}, opts = {}) {
       const envelope = { action, payload, requestId: opts.requestId || '', clientVersion: CFG.CLIENT_VERSION || '' };
       Loading.start();
       try {
@@ -380,8 +462,17 @@
     }
   };
 
-  async function loadCore() {
-    const res = await Api.call('getBootstrap');
+  /** Business settings + customer list. Loaded once, then only again after a save, Refresh, or 5 minutes. */
+  const Core = { at: 0, stale: true, inflight: null };
+  function loadCore(force) {
+    if (!force && State.loaded && !Core.stale && Date.now() - Core.at < 300000) return Promise.resolve();
+    if (Core.inflight) return Core.inflight;
+    Core.inflight = loadCoreNow(force).finally(() => { Core.inflight = null; });
+    return Core.inflight;
+  }
+  async function loadCoreNow(force) {
+    const res = await Api.call('getBootstrap', {}, { fresh: true });
+    Core.at = Date.now(); Core.stale = false;
     State.settings = res.data.settings;
     mergeCategories(DEFAULT_SETTINGS.expenseCategories.concat(Extras.get().categories));
     mergeProducts((res.data.usedProducts || []).concat(Extras.get().products));
@@ -425,6 +516,11 @@
     current: null,
     register(name, page) { this.routes[name] = page; },
     go(name) { if (location.hash !== '#' + name) location.hash = name; else this.render(); },
+    /** Redraw the open page with new data, without scrolling or closing anything. */
+    async refresh() {
+      const page = this.routes[this.current];
+      if (page && page.started && page.show) { try { await page.show(); } catch (e) { /* keep what is shown */ } }
+    },
     async render() {
       const name = (location.hash || '').replace('#', '');
       const route = this.routes[name] ? name : 'dashboard';
@@ -451,7 +547,11 @@
       $('#sidebar-close').addEventListener('click', Shell.closeSidebar);
       $('#sidebar-backdrop').addEventListener('click', Shell.closeSidebar);
       $('#refresh-btn').addEventListener('click', async () => {
-        try { await loadCore(); await Router.render(); UI.toast('Data reloaded from Google Sheets.'); } catch (e) { UI.toast(e.message, 'error'); }
+        Api.clearCache();
+        try {
+          if (Local.available) await Local.refresh();
+          await Promise.all([loadCore(true), Router.render()]); UI.toast('Data reloaded from Google Sheets.');
+        } catch (e) { UI.toast(e.message, 'error'); }
       });
       document.addEventListener('keydown', (e) => { if (e.key === 'Escape') Shell.closeSidebar(); });
       // Dialog close buttons & backdrop clicks.
@@ -482,7 +582,16 @@
         return;
       }
       Selects.fillAll();   // items and payment methods are available before the server answers
-      try { await loadCore(); } catch (e) {
+      if (!DEMO_DIRECT) await Local.init();
+      const hadCopy = !!Local.snap;
+      Local.onUpdate = () => { Core.stale = true; loadCore().catch(() => {}); Router.refresh(); };
+      if (hadCopy) Local.syncInBackground();          // show last copy now, fetch the latest quietly
+      // check again when you come back to the tab, and every 5 minutes while it is open
+      document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - Local.at > 60000) Local.syncInBackground(); });
+      setInterval(() => { if (!document.hidden) Local.syncInBackground(); }, 300000);
+      const core = loadCore(true);
+      Router.render();     // load the page's own data at the same time, not one after the other
+      try { await core; } catch (e) {
         $('#content').insertAdjacentHTML('afterbegin', `<div class="notice notice-warn"><p><b>Could not load data:</b> ${esc(e.message)}</p>
           <p style="margin-top:8px">You can see the item list, but bills cannot be saved and no records can load until this is fixed. Check:</p>
           <ol class="method-list" style="color:inherit;margin-top:6px">
@@ -491,10 +600,8 @@
             <li>Run the <code>setup</code> function once in the Apps Script editor and allow access.</li>
             <li>After pasting new code, deploy a <b>New version</b> (Manage deployments → Edit → Version: New version). The link in <code>config.js</code> must end in <code>/exec</code>.</li>
           </ol></div>`);
-        Router.render();   // still open the page so the item list is visible
         return;
       }
-      Router.render();
     }
   };
 
@@ -576,30 +683,49 @@
   };
 
   /** Chart helpers (Chart.js from CDN; pages still work without it). */
+  /** Small built-in SVG charts (no chart library to download, so pages open faster). */
   const Charts = {
-    store: {},
+    drawn: {},
     color(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); },
-    draw(id, config) {
-      const canvas = document.getElementById(id);
-      if (!canvas) return;
-      if (typeof window.Chart === 'undefined') {
-        canvas.parentElement.innerHTML = '<p class="muted small">Charts could not load (no internet connection to the chart library). The figures are still shown in the tables.</p>';
-        return;
-      }
-      if (Charts.store[id]) Charts.store[id].destroy();
-      const ink = Charts.color('--muted'), grid = Charts.color('--line');
-      Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
-      Chart.defaults.color = ink;
-      config.options = Object.assign({
-        responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ' ' + Fmt.inr(c.parsed[config.options && config.options.indexAxis === 'y' ? 'x' : 'y']) } } }
-      }, config.options || {});
-      const money = { ticks: { callback: (v) => Fmt.inrShort(v) }, grid: { color: grid }, beginAtZero: true };
-      const plain = { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 12 } };
-      config.options.scales = config.options.indexAxis === 'y' ? { x: money, y: plain } : { x: plain, y: money };
-      Charts.store[id] = new Chart(canvas, config);
-    }
+    /** Column chart: points = [{ label, value, title }]. */
+    columns(id, points, color = '--chart-1') {
+      const el = document.getElementById(id); if (!el) return;
+      Charts.drawn[id] = () => Charts.columns(id, points, color);
+      if (!points.length || points.every((p) => !p.value)) { el.innerHTML = '<p class="muted small chart-empty">No sales in this period.</p>'; return; }
+      const W = Math.max(el.clientWidth, 280), H = Math.max(el.clientHeight, 180), L = 52, B = 22, T = 8, R = 6;
+      const max = Math.max(...points.map((p) => p.value)) || 1, step = Charts.niceStep(max / 4), top = Math.ceil(max / step) * step;
+      const pw = (W - L - R) / points.length, bw = Math.max(1, Math.min(pw * 0.72, 34)), y = (v) => T + (H - T - B) * (1 - v / top);
+      const every = Math.ceil(points.length / Math.max(2, Math.floor((W - L) / 64)));
+      let g = '';
+      for (let v = 0; v <= top + 1e-9; v += step) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${esc(Fmt.axis(v))}</text>`;
+      const bars = points.map((p, i) => {
+        const x = L + pw * i + (pw - bw) / 2, h = Math.max(p.value ? 1.5 : 0, y(0) - y(p.value));
+        return `<rect x="${x.toFixed(1)}" y="${(y(0) - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="${Math.min(3, bw / 3)}" style="fill:var(${color})"><title>${esc(p.title || p.label)}: ${esc(Fmt.inr(p.value))}</title></rect>`
+          + (i % every === 0 ? `<text x="${(L + pw * i + pw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(p.label)}</text>` : '');
+      }).join('');
+      el.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(el.dataset.label || 'Chart')}">${g}${bars}</svg>`;
+    },
+    /** Horizontal bars as plain HTML: items = [{ label, value, note }]. */
+    bars(items, { color = '--accent', fmt = Fmt.inr, empty = 'Nothing in this period.' } = {}) {
+      if (!items.length) return `<p class="muted small">${esc(empty)}</p>`;
+      const max = Math.max(...items.map((x) => x.value)) || 1;
+      return `<div class="bar-list">${items.map((x) => `<div class="bar-row"><span>${esc(x.label)}${x.note ? ` <span class="muted small">${x.note}</span>` : ''}</span><b class="num">${fmt(x.value)}</b><div class="bar"><span style="width:${(x.value / max * 100).toFixed(1)}%;background:var(${color})"></span></div></div>`).join('')}</div>`;
+    },
+    niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw || 1))), n = raw / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; },
+    redrawAll() { Object.keys(Charts.drawn).forEach((id) => { const el = document.getElementById(id); if (el && el.offsetParent) Charts.drawn[id](); }); }
   };
+  let resizeTimer = 0;
+  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(Charts.redrawAll, 150); });
+
+  /** "▲ 12% vs previous 30 days" — green when it is good news. */
+  function change(now, before, { goodWhenUp = true, label = '' } = {}) {
+    if (!before && !now) return '';
+    if (!before) return `<span class="chg up">new</span>${label}`;
+    const pct = Math.round((now - before) / Math.abs(before) * 100);
+    if (pct === 0) return `<span class="chg">same</span>${label}`;
+    const good = (pct > 0) === goodWhenUp;
+    return `<span class="chg ${good ? 'good' : 'bad'}">${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}%</span>${label}`;
+  }
 
   /* ===================== 7. Page controllers ===================== */
 
@@ -634,26 +760,25 @@
       const m = d.metrics;
       const period = d.range.from === d.range.to ? Fmt.date(d.range.from) : `${Fmt.date(d.range.from)} to ${Fmt.date(d.range.to)}`;
       const card = (cls, label, value, note) => `<div class="metric ${cls}"><span class="metric-label">${esc(label)}</span><span class="metric-value">${value}</span>${note ? `<span class="metric-note">${note}</span>` : ''}</div>`;
+      const pv = d.previous, vs = ` <span class="muted">vs previous ${pv.range.days} day${pv.range.days === 1 ? '' : 's'}</span>`;
+      const margin = m.revenue ? Math.round(m.profit / m.revenue * 100) : null;
       $('#dash-metrics').innerHTML = [
-        card('is-revenue', "Today's sales revenue", Fmt.inr(m.todayRevenue), 'Bills made today (paid or not)'),
-        card('is-revenue', "This month's sales revenue", Fmt.inr(m.monthRevenue), 'From the 1st of this month'),
-        card('is-revenue', 'Sales revenue (period)', Fmt.inr(m.revenue), esc(period)),
-        card('is-revenue', 'Bills', Fmt.qty(m.transactions), 'Non-cancelled bills in period'),
-        card('is-cash', 'Cash received', Fmt.inr(m.cashReceived), 'Payments minus refunds in period'),
-        card('is-expense', 'Total expenses', Fmt.inr(m.totalExpenses), 'All expenses in period'),
-        card('is-profit', 'Profit', `<span class="${m.profit < 0 ? 'neg' : ''}">${Fmt.inr(m.profit)}</span>`, 'Sales revenue − expenses'),
-        card('is-due', 'Outstanding customer payments', Fmt.inr(m.outstanding), `${m.outstandingCount} unpaid or part-paid bill${m.outstandingCount === 1 ? '' : 's'} (all dates)`)
+        card('is-revenue', "Today's sales", Fmt.inr(m.todayRevenue), `This month so far: ${Fmt.inr(m.monthRevenue)}`),
+        card('is-revenue', 'Sales revenue', Fmt.inr(m.revenue), change(m.revenue, pv.revenue, { label: vs }) || esc(period)),
+        card('is-revenue', 'Bills', Fmt.qty(m.transactions), change(m.transactions, pv.transactions, { label: vs }) || 'Non-cancelled bills'),
+        card('is-revenue', 'Average bill', Fmt.inr(m.averageSale), change(m.averageSale, pv.averageSale, { label: vs }) || 'Revenue ÷ bills'),
+        card('is-cash', 'Cash received', Fmt.inr(m.cashReceived), 'Payments minus refunds'),
+        card('is-expense', 'Expenses', Fmt.inr(m.totalExpenses), change(m.totalExpenses, pv.totalExpenses, { goodWhenUp: false, label: vs }) || 'All expenses in period'),
+        card('is-profit', 'Profit', `<span class="${m.profit < 0 ? 'neg' : ''}">${Fmt.inr(m.profit)}</span>`, (margin === null ? '' : `<b>${margin}%</b> of sales · `) + (change(m.profit, pv.profit) || 'Sales − expenses')),
+        card('is-due', 'Still to collect', Fmt.inr(m.outstanding), `${m.outstandingCount} unpaid or part-paid bill${m.outstandingCount === 1 ? '' : 's'} (all dates)`)
       ].join('');
 
       const daily = d.charts.daily;
       $('#dash-daily-caption').textContent = daily.length ? `${Fmt.date(daily[0].date)} to ${Fmt.date(daily[daily.length - 1].date)}` : '';
-      Charts.draw('chart-daily', { type: 'bar', data: { labels: daily.map((x) => Fmt.date(x.date).slice(0, 5)), datasets: [{ data: daily.map((x) => x.revenue), backgroundColor: Charts.color('--chart-1'), borderRadius: 4, maxBarThickness: 28 }] } });
-      Charts.draw('chart-monthly', { type: 'bar', data: { labels: d.charts.monthly.map((x) => Fmt.month(x.month)), datasets: [{ data: d.charts.monthly.map((x) => x.revenue), backgroundColor: Charts.color('--chart-2'), borderRadius: 4, maxBarThickness: 36 }] } });
-      const bp = d.charts.byProduct;
-      const palette = ['--chart-1', '--chart-2', '--chart-3', '--chart-4', '--chart-5', '--chart-6'].map(Charts.color);
-      if (bp.length) {
-        Charts.draw('chart-products', { type: 'bar', data: { labels: bp.map((x) => x.productName), datasets: [{ data: bp.map((x) => x.revenue), backgroundColor: bp.map((_, i) => palette[i % palette.length]), borderRadius: 4, maxBarThickness: 30 }] }, options: { indexAxis: 'y' } });
-      } else if (Charts.store['chart-products']) { Charts.store['chart-products'].destroy(); delete Charts.store['chart-products']; }
+      Charts.columns('chart-daily', daily.map((x) => ({ label: Fmt.date(x.date).slice(0, 5), title: Fmt.date(x.date), value: x.revenue })), '--chart-1');
+      Charts.columns('chart-monthly', d.charts.monthly.map((x) => ({ label: Fmt.month(x.month).slice(0, 3), title: Fmt.month(x.month), value: x.revenue })), '--chart-2');
+      const bp = d.charts.byProduct, tot = bp.reduce((a, x) => a + x.revenue, 0);
+      $('#chart-products').innerHTML = Charts.bars(bp.map((x) => ({ label: x.productName, value: x.revenue, note: tot ? Math.round(x.revenue / tot * 100) + '%' : '' })), { color: '--chart-3', empty: 'No sales in this period.' });
 
       $('#dash-due').innerHTML = d.dueBills.length ? d.dueBills.map((b) => `<div class="alert-row"><svg><use href="#i-alert"/></svg><div class="grow"><a href="#" data-view-sale="${esc(b.saleId)}"><b>${esc(b.customerName)}</b></a><span class="sub">${Fmt.date(b.date)} · ${esc(b.products)}</span></div><span class="pill bad">${Fmt.inr(b.balanceDue)}</span></div>`).join('')
         : UI.empty('Nothing is owed', 'Every bill is fully paid.');
@@ -697,7 +822,8 @@
       RecordSale.reset();
     },
     async show() {
-      await loadCore();
+      if (State.loaded) loadCore().catch(() => {});   // list is already here; refresh customers quietly in the background
+      else await loadCore();
       $$('.sale-line', $('#sale-lines')).forEach((row) => RecordSale.fillProductSelect(row));
       RecordSale.recalc();
     },
@@ -826,14 +952,14 @@
       const base = { date: $('#sale-date').value, customerName: $('#sale-customer').value.trim() || 'Walk-in', items, discount: Number($('#sale-discount').value || 0), notes: $('#sale-notes').value.trim() };
       if (RecordSale.editing) {
         await submitWrite(form, 'updateSale', Object.assign({ saleId: RecordSale.editing.sale.saleId }, base), async () => {
-          RecordSale.editing = null; RecordSale.reset(); await loadCore(); Router.go('sales');
+          RecordSale.editing = null; RecordSale.reset(); loadCore().catch(() => {}); Router.go('sales');
         });
       } else {
         const payload = Object.assign(base, { amountReceived: Number($('#sale-received').value || 0), paymentMethod: $('#sale-method').value, paymentReference: $('#sale-ref').value.trim() });
         await submitWrite(form, 'saveSale', payload, async () => {
           const keepDate = $('#sale-date').value;
           RecordSale.reset(); $('#sale-date').value = keepDate;
-          await loadCore(); RecordSale.show();
+          RecordSale.show();
         });
       }
     },
@@ -1217,11 +1343,11 @@
       const r = Reports.range;
       $('#rep-from').value = r.from; $('#rep-to').value = r.to;
       $$('#report-filters [data-preset]').forEach((b) => { const p = Dates.preset(b.dataset.preset); b.setAttribute('aria-pressed', String(p.from === r.from && p.to === r.to)); });
-      ['#rep-sales', '#rep-expenses', '#rep-payments', '#rep-profit'].forEach((id) => { if (!Reports.data) $(id).innerHTML = UI.loadingBlock(); });
+      ['#rep-insights', '#rep-sales', '#rep-expenses', '#rep-payments', '#rep-profit'].forEach((id) => { if (!Reports.data) $(id).innerHTML = UI.loadingBlock(); });
       try {
         Reports.data = (await Api.call('getReports', r)).data;
         Reports.render();
-      } catch (err) { $('#rep-sales').innerHTML = UI.errorBlock(err); }
+      } catch (err) { $('#rep-insights').innerHTML = UI.errorBlock(err); $('#rep-sales').innerHTML = UI.errorBlock(err); }
     },
     /** Section with a heading, a table and a CSV button wired to the same rows. */
     block(key, title, columns, rows, csv, opts = {}) {
@@ -1232,6 +1358,7 @@
     render() {
       const d = Reports.data, period = `${Fmt.date(d.range.from)} to ${Fmt.date(d.range.to)}`;
       Reports.exports = {};
+      Reports.renderInsights(d.insights, period);
       // A. Sales
       const s = d.sales;
       $('#rep-sales').innerHTML = `<div class="stack"><div class="panel">${Reports.kv([['Period', period], ['Total revenue', Fmt.inr(s.totalRevenue)], ['Transactions', s.transactions], ['Average sale', Fmt.inr(s.averageSale)], ['Discounts given', Fmt.inr(s.totalDiscount)]])}</div>
@@ -1290,6 +1417,53 @@
         </dl>
         <h3>How profit is calculated</h3><ul class="method-list">${pr.method.map((m) => `<li>${esc(m)}</li>`).join('')}</ul></div></div>`;
     }
+  };
+
+  /* ---------- Reports → Insights ---------- */
+  Reports.renderInsights = (ins, period) => {
+    const c = ins.current, p = ins.previous, pr = ins.previousRange;
+    const prevLabel = `${Fmt.date(pr.from)} to ${Fmt.date(pr.to)}`;
+    const best = ins.items[0], bestDay = ins.weekdays.slice().sort((a, b) => b.revenue - a.revenue)[0];
+    const pct = (v) => (v === null || v === undefined ? '–' : v + '%');
+    const head = (k, v, n) => `<div class="headline"><span class="k">${esc(k)}</span><span class="v">${v}</span>${n ? `<span class="n">${n}</span>` : ''}</div>`;
+    const headlines = [
+      head('Sales vs previous period', Fmt.inr(c.revenue), change(c.revenue, p.revenue, { label: ` <span class="muted">was ${Fmt.inr(p.revenue)}</span>` })),
+      head('Profit margin', pct(c.margin), c.margin === null ? 'No sales yet' : `Out of every ₹100 of sales, ₹${Math.round(c.margin)} is left after expenses`),
+      head('Best-selling item', best ? esc(best.productName) : '–', best ? `${best.share}% of sales · ${Fmt.qty(best.pieces)} pieces` : 'No sales yet'),
+      head('Best day of the week', bestDay && bestDay.revenue ? esc(bestDay.day) : '–', bestDay && bestDay.revenue ? `${Fmt.inr(bestDay.revenue)} from ${bestDay.transactions} bill${bestDay.transactions === 1 ? '' : 's'}` : ''),
+      head('Customers', `${ins.customers.active} buying`, `${ins.customers.newCount} new · ${ins.customers.returning} returning${ins.customers.top3Share ? ` · top 3 give ${ins.customers.top3Share}% of sales` : ''}`),
+      head('To follow up', `${ins.followUp.length} regular${ins.followUp.length === 1 ? '' : 's'}`, 'Bought 2+ times, nothing in the last 30 days')
+    ].join('');
+
+    const rows = [['Sales revenue', 'revenue', true, Fmt.inr], ['Bills', 'transactions', true, Fmt.qty], ['Average bill', 'averageSale', true, Fmt.inr],
+      ['Customers', 'customers', true, Fmt.qty], ['Expenses', 'expenses', false, Fmt.inr], ['Profit', 'profit', true, Fmt.inr],
+      ['Profit margin', 'margin', true, pct], ['Cash received', 'cashReceived', true, Fmt.inr]];
+    Reports.exports['insights-compare'] = { headers: ['Measure', period, prevLabel], rows: rows.map(([l, k]) => [l, c[k], p[k]]) };
+    const compare = `<div class="panel report-section"><div class="report-head"><h2>This period vs the one before</h2><button type="button" class="btn btn-ghost btn-sm" data-export-report="insights-compare"><svg><use href="#i-download"/></svg>CSV</button></div>
+      <p class="muted small">${esc(period)} compared with the same number of days before it (${esc(prevLabel)}).</p>
+      ${table([{ label: 'Measure', render: (r) => esc(r[0]) }, { label: 'This period', num: true, render: (r) => r[3](c[r[1]]) },
+        { label: 'Before', num: true, render: (r) => r[3](p[r[1]]) },
+        { label: 'Change', num: true, render: (r) => (r[1] === 'margin' ? (c.margin !== null && p.margin !== null ? `${c.margin - p.margin > 0 ? '+' : ''}${Math.round((c.margin - p.margin) * 10) / 10} pts` : '–') : change(c[r[1]], p[r[1]], { goodWhenUp: r[2] }) || '–') }], rows)}</div>`;
+
+    Reports.exports['insights-items'] = { headers: ['Item', 'Pieces sold (box = ' + 8 + ')', 'Bills', 'Revenue', 'Share %', 'Avg per piece', 'Revenue before'], rows: ins.items.map((x) => [x.productName, x.pieces, x.bills, x.revenue, x.share, x.perPiece, x.previousRevenue]) };
+    const items = `<div class="panel report-section"><div class="report-head"><h2>How each item is doing</h2>${ins.items.length ? '<button type="button" class="btn btn-ghost btn-sm" data-export-report="insights-items"><svg><use href="#i-download"/></svg>CSV</button>' : ''}</div>
+      ${table([{ label: 'Item', render: (x) => esc(x.productName) }, { label: 'Pieces', num: true, render: (x) => Fmt.qty(x.pieces) },
+        { label: 'Share', num: true, render: (x) => x.share + '%' }, { label: 'Avg / piece', num: true, render: (x) => Fmt.inr(x.perPiece) },
+        { label: 'Revenue', num: true, render: (x) => Fmt.inr(x.revenue) }, { label: 'Change', num: true, render: (x) => change(x.revenue, x.previousRevenue) || '–' }],
+        ins.items, { empty: 'No sales in this period' })}
+      <p class="muted small" style="margin-top:8px">Pieces count a box as 8 pieces.</p></div>`;
+
+    const days = `<div class="panel report-section"><h2>Sales by day of the week</h2>${Charts.bars(ins.weekdays.map((x) => ({ label: x.day, value: x.revenue, note: x.transactions ? x.transactions + ' bill' + (x.transactions === 1 ? '' : 's') : '' })), { color: '--chart-1', empty: 'No sales in this period.' })}</div>`;
+
+    Reports.exports['insights-followup'] = { headers: ['Customer', 'Last bill', 'Days since', 'Usually every (days)', 'Bills', 'Total bought'], rows: ins.followUp.map((x) => [x.customerName, Fmt.date(x.lastDate), x.daysSince, x.usualGap === null ? '' : x.usualGap, x.bills, x.revenue]) };
+    const follow = `<div class="panel report-section"><div class="report-head"><h2>Regular customers to call</h2>${ins.followUp.length ? '<button type="button" class="btn btn-ghost btn-sm" data-export-report="insights-followup"><svg><use href="#i-download"/></svg>CSV</button>' : ''}</div>
+      <p class="muted small">Bought at least twice, but no bill in the 30 days up to ${Fmt.date(Reports.data.range.to)}. Biggest buyers first.</p>
+      ${table([{ label: 'Customer', render: (x) => esc(x.customerName) }, { label: 'Last bill', render: (x) => `${Fmt.date(x.lastDate)}<span class="sub">${x.daysSince} days ago${x.usualGap ? ` · usually every ${x.usualGap} days` : ''}</span>` },
+        { label: 'Bills', num: true, render: (x) => x.bills }, { label: 'Total bought', num: true, render: (x) => Fmt.inr(x.revenue) }],
+        ins.followUp, { empty: 'Nobody to follow up', emptySub: 'All regular customers bought in the last 30 days.' })}
+      ${ins.customers.newNames.length ? `<h3 style="margin-top:14px">New customers this period</h3><p class="small">${ins.customers.newNames.map(esc).join(', ')}</p>` : ''}</div>`;
+
+    $('#rep-insights').innerHTML = `<div class="stack"><div class="headlines">${headlines}</div>${compare}<div class="grid-2">${items}${days}</div>${follow}</div>`;
   };
 
   /* ---------- Backup & info ---------- */

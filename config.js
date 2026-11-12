@@ -8,7 +8,7 @@
 window.LADDOO_CONFIG = Object.freeze({
   // Paste your Apps Script web app URL (Deploy → Manage deployments → Web app URL).
   // It looks like: https://script.google.com/macros/s/AKfy.../exec
-  API_URL: 'https://script.google.com/macros/s/AKfycbxWMxLis7dnfN7aYuX61ZCCYsk3sEWAFXuAwI95i6ibfkMyaZX7sX01jr6rV3Iw_vBB/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbxu8UdSc9OmXj2c-0THyb6O_eliuRAq7_AZ50RwgtQ2A00k_7UGd0WTCEjcexeSn4fJ/exec',
   // ===== Items in the Record Sale drop-down =====
   // name: shown on the bill.  boxSize: pieces in one box (0 = not sold in boxes).
   // pricePerPiece / pricePerBox: 0 = the price box stays empty and you type it on each bill.
